@@ -18,7 +18,7 @@ def signal():
         return {
             "pair": "EUR/USD",
             "signal": "NO TRADE",
-            "reason": "Wait for candle close",
+            "reason": "Waiting for candle close",
             "confidence": "0%",
             "time": now
         }
@@ -27,15 +27,26 @@ def signal():
     candle_1 = random.choice(["GREEN", "RED"])
     candle_2 = random.choice(["GREEN", "RED"])
 
+    confidence_score = 0
+
+    # Rule 1: 2 candle confirmation
+    if candle_1 == candle_2:
+        confidence_score += 30
+
+    # Rule 2: Good timing
+    confidence_score += 20
+
+    # Decision
     if candle_1 == candle_2 == "GREEN":
         trade_signal = "BUY"
-        confidence = "65%"
     elif candle_1 == candle_2 == "RED":
         trade_signal = "SELL"
-        confidence = "65%"
     else:
         trade_signal = "NO TRADE"
-        confidence = "0%"
+        confidence_score = 0
+
+    # Final confidence (cap)
+    confidence = f"{min(confidence_score, 70)}%"
 
     return {
         "pair": "EUR/USD",
