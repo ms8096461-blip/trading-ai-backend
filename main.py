@@ -1,59 +1,84 @@
 from fastapi import FastAPI
-import random
+import requests
+import os
 from datetime import datetime
 
 app = FastAPI()
 
+ALPHA_KEY = os.getenv("ALPHA_KEY")
+
+PAIR = "EURUSD"
+TIMEFRAME = "1min"
+
+def get_candles():
+    url = (
+        "https://www.alphavantage.co/query?"
+        f"function=FX_INTRADAY&from_symbol=EUR&to_symbol=USD"
+        f"&interval={TIMEFRAME}&apikey={ALPHA_KEY}&outputsize=compact"
+    )
+    r = requests.get(url)
+    data = r.json()
+
+    candles = data.get("Time Series FX (1min)", {})
+    keys = list(candles.keys())
+
+    if len(keys) < 2:
+        return None
+
+    c1 = candles[keys[0]]  # latest closed
+    c2 = candles[keys[1]]  # previous
+
+    return c1, c2
+
+def candle_color(c):
+    if float(c["4. close"]) > float(c["1. open"]):
+        return "GREEN"
+    elif float(c["4. close"]) < float(c["1. open"]):
+        return "RED"
+    else:
+        return "DOJI"
+
 @app.get("/")
-def home():
-    return {"status": "Trading AI Backend Running"}
-
-@app.get("/signal")
 def signal():
-    now = datetime.utcnow()
-    seconds = now.second
+    candles = get_candles()
 
-    # Book rule: last 30 sec = NO TRADE
-    if seconds >= 30:
+    if not candles:
+        return {"status": "NO TRADE", "reason": "No candle data"}
+
+    c1, c2 = candles
+
+    color1 = candle_color(c1)
+    color2 = candle_color(c2)
+
+    if color1 == "DOJI" or color2 == "DOJI":
         return {
             "pair": "EUR/USD",
             "signal": "NO TRADE",
-            "reason": "Waiting for candle close",
             "confidence": "0%",
-            "time": now
+            "reason": "Doji candle"
         }
 
-    # Training candles (fake data, logic real)
-    candle_1 = random.choice(["GREEN", "RED"])
-    candle_2 = random.choice(["GREEN", "RED"])
+    if color1 == color2:
+        signal = "BUY" if color1 == "GREEN" else "SELL"
+        confidence = 65
 
-    confidence_score = 0
+        body1 = abs(float(c1["4. close"]) - float(c1["1. open"]))
+        body2 = abs(float(c2["4. close"]) - float(c2["1. open"]))
 
-    # Rule 1: 2 candle confirmation
-    if candle_1 == candle_2:
-        confidence_score += 30
+        if body1 > body2:
+            confidence += 5
 
-    # Rule 2: Good timing
-    confidence_score += 20
-
-    # Decision
-    if candle_1 == candle_2 == "GREEN":
-        trade_signal = "BUY"
-    elif candle_1 == candle_2 == "RED":
-        trade_signal = "SELL"
-    else:
-        trade_signal = "NO TRADE"
-        confidence_score = 0
-
-    # Final confidence (cap)
-    confidence = f"{min(confidence_score, 70)}%"
+        return {
+            "pair": "EUR/USD",
+            "signal": signal,
+            "confidence": f"{confidence}%",
+            "expiry": "1 MIN",
+            "reason": "2 candle confirmation"
+        }
 
     return {
         "pair": "EUR/USD",
-        "last_candle": candle_1,
-        "previous_candle": candle_2,
-        "signal": trade_signal,
-        "expiry": "1 minute",
-        "confidence": confidence,
-        "time": now
+        "signal": "NO TRADE",
+        "confidence": "0%",
+        "reason": "No confirmation"
     }
