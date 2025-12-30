@@ -1,84 +1,74 @@
 from fastapi import FastAPI
-import requests
-import os
 from datetime import datetime
 
-app = FastAPI()
+app = FastAPI(title="Trading AI Backend", version="1.0")
 
-ALPHA_KEY = os.getenv("ALPHA_KEY")
 
-PAIR = "EURUSD"
-TIMEFRAME = "1min"
+# -----------------------------
+# Candle strength function
+# -----------------------------
+def is_strong_candle(open_p, close_p, high_p, low_p):
+    body = abs(close_p - open_p)
+    wick = (high_p - low_p) - body
 
-def get_candles():
-    url = (
-        "https://www.alphavantage.co/query?"
-        f"function=FX_INTRADAY&from_symbol=EUR&to_symbol=USD"
-        f"&interval={TIMEFRAME}&apikey={ALPHA_KEY}&outputsize=compact"
-    )
-    r = requests.get(url)
-    data = r.json()
+    if body <= 0:
+        return False
 
-    candles = data.get("Time Series FX (1min)", {})
-    keys = list(candles.keys())
+    if body > wick:
+        return True
+    return False
 
-    if len(keys) < 2:
-        return None
 
-    c1 = candles[keys[0]]  # latest closed
-    c2 = candles[keys[1]]  # previous
-
-    return c1, c2
-
-def candle_color(c):
-    if float(c["4. close"]) > float(c["1. open"]):
-        return "GREEN"
-    elif float(c["4. close"]) < float(c["1. open"]):
-        return "RED"
-    else:
-        return "DOJI"
-
+# -----------------------------
+# API root
+# -----------------------------
 @app.get("/")
-def signal():
-    candles = get_candles()
+def root():
+    return {
+        "status": "running",
+        "message": "Trading AI backend is live"
+    }
 
-    if not candles:
-        return {"status": "NO TRADE", "reason": "No candle data"}
 
-    c1, c2 = candles
+# -----------------------------
+# Signal endpoint
+# -----------------------------
+@app.get("/signal")
+def get_signal():
+    """
+    STEP-1:
+    Candle strength + basic BUY / SELL / NO TRADE
+    (Dummy data for now – real market data later)
+    """
 
-    color1 = candle_color(c1)
-    color2 = candle_color(c2)
+    # -------- Dummy candle data (safe for now) --------
+    open_p = 1.1000
+    close_p = 1.1012
+    high_p = 1.1016
+    low_p = 1.0994
 
-    if color1 == "DOJI" or color2 == "DOJI":
+    # -------- Candle check --------
+    if not is_strong_candle(open_p, close_p, high_p, low_p):
         return {
             "pair": "EUR/USD",
             "signal": "NO TRADE",
-            "confidence": "0%",
-            "reason": "Doji candle"
+            "confidence": 40,
+            "expiry": None,
+            "reason": "Weak candle",
+            "time": datetime.utcnow()
         }
 
-    if color1 == color2:
-        signal = "BUY" if color1 == "GREEN" else "SELL"
-        confidence = 65
-
-        body1 = abs(float(c1["4. close"]) - float(c1["1. open"]))
-        body2 = abs(float(c2["4. close"]) - float(c2["1. open"]))
-
-        if body1 > body2:
-            confidence += 5
-
-        return {
-            "pair": "EUR/USD",
-            "signal": signal,
-            "confidence": f"{confidence}%",
-            "expiry": "1 MIN",
-            "reason": "2 candle confirmation"
-        }
+    # -------- Direction --------
+    if close_p > open_p:
+        signal = "BUY"
+    else:
+        signal = "SELL"
 
     return {
         "pair": "EUR/USD",
-        "signal": "NO TRADE",
-        "confidence": "0%",
-        "reason": "No confirmation"
+        "signal": signal,
+        "confidence": 65,
+        "expiry": "1M",
+        "reason": "Strong candle",
+        "time": datetime.utcnow()
     }
