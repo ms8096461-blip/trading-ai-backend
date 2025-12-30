@@ -1,74 +1,127 @@
 from fastapi import FastAPI
-import random
-from datetime import datetime, timedelta
+import threading, time, random
+from collections import deque
 
-app = FastAPI(title="Trading AI Backend", version="3.0")
+app = FastAPI()
 
-PAIRS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD"]
-EXPIRY_OPTIONS = ["1M", "3M"]
+# =========================
+# GLOBAL STATE
+# =========================
+STATE = {
+    "pair": "EUR/USD",
+    "signal": "NO TRADE",
+    "confidence": 0,
+    "expiry": "1 minute",
+    "trend": "NEUTRAL",
+    "momentum": "NEUTRAL",
+    "volatility": "NORMAL",
+    "reason": "Waiting for candle close",
+    "last_update": ""
+}
 
-# ---- Signal Lock Memory ----
-LAST_SIGNAL_TIME = None
-LAST_SIGNAL_DATA = None
-LOCK_SECONDS = 60
+# Rolling candles (mock market engine for demo/logic)
+# Each candle: (open, high, low, close)
+candles = deque(maxlen=20)
 
+# =========================
+# HELPER LOGIC (BOOK-STYLE)
+# =========================
+def ema(values, period):
+    if len(values) < period:
+        return None
+    k = 2 / (period + 1)
+    e = values[0]
+    for v in values[1:]:
+        e = v * k + e * (1 - k)
+    return e
 
-def generate_signal_logic():
-    market = random.choice(["STRONG", "WEAK", "SIDEWAYS"])
-    trend = random.choice(["UP", "DOWN", "NONE"])
+def rsi(values, period=14):
+    if len(values) < period + 1:
+        return None
+    gains, losses = 0, 0
+    for i in range(-period, -1):
+        diff = values[i+1] - values[i]
+        if diff > 0: gains += diff
+        else: losses -= diff
+    if losses == 0: return 100
+    rs = gains / losses
+    return 100 - (100 / (1 + rs))
 
-    # NO TRADE filters
-    if market != "STRONG" or trend == "NONE":
-        return {
-            "status": "NO TRADE",
-            "confidence": random.randint(40, 55),
-            "reason": "Market weak or no clear trend"
-        }
+def candle_strength(c):
+    o,h,l,cl = c
+    body = abs(cl - o)
+    wick = (h - l) - body
+    if body == 0: return 0
+    return body / max(wick, 0.0001)
 
-    confidence = random.randint(60, 85)
-    if confidence < 60:
-        return {
-            "status": "NO TRADE",
-            "confidence": confidence,
-            "reason": "Low confidence"
-        }
+# =========================
+# MOCK MARKET (1-MIN AUTO)
+# =========================
+def make_candle(prev_close):
+    # simple stochastic move
+    o = prev_close
+    move = random.uniform(-0.0006, 0.0006)
+    cl = o + move
+    h = max(o, cl) + random.uniform(0, 0.0003)
+    l = min(o, cl) - random.uniform(0, 0.0003)
+    return (o, h, l, cl)
 
-    signal = "BUY" if trend == "UP" else "SELL"
-    expiry = "3M" if confidence >= 75 else "1M"
+# =========================
+# CORE SIGNAL ENGINE
+# =========================
+def engine():
+    # seed
+    price = 1.1000
+    for _ in range(5):
+        c = make_candle(price)
+        candles.append(c)
+        price = c[3]
 
-    return {
-        "pair": random.choice(PAIRS),
-        "signal": signal,
-        "expiry": expiry,
-        "confidence": confidence,
-        "reason": "Trend aligned + confidence OK"
-    }
+    while True:
+        # 1) build new 1-minute candle
+        c = make_candle(candles[-1][3])
+        candles.append(c)
+        closes = [x[3] for x in candles]
 
+        # 2) indicators
+        ema5 = ema(closes[-5:], 5)
+        ema13 = ema(closes[-13:], 13)
+        r = rsi(closes, 14)
+        strength = candle_strength(c)
 
-@app.get("/")
-def root():
-    return {"status": "Trading AI Backend Running (Live-Like Demo)"}
+        # 3) trend & momentum
+        trend = "NEUTRAL"
+        if ema5 and ema13:
+            if ema5 > ema13: trend = "UP"
+            elif ema5 < ema13: trend = "DOWN"
 
+        momentum = "NEUTRAL"
+        if r is not None:
+            if r > 60: momentum = "BULLISH"
+            elif r < 40: momentum = "BEARISH"
 
-@app.get("/signal")
-def get_signal():
-    global LAST_SIGNAL_TIME, LAST_SIGNAL_DATA
+        # 4) volatility proxy
+        vol = "NORMAL"
+        if strength > 2.2: vol = "HIGH"
+        elif strength < 0.6: vol = "LOW"
 
-    now = datetime.utcnow()
+        # 5) decision matrix (BOOK-STYLE)
+        confidence = 50
+        signal = "NO TRADE"
+        reasons = []
 
-    # ---- Signal Lock (1 minute) ----
-    if LAST_SIGNAL_TIME and (now - LAST_SIGNAL_TIME).seconds < LOCK_SECONDS:
-        locked = LAST_SIGNAL_DATA.copy()
-        locked["locked"] = True
-        locked["time"] = LAST_SIGNAL_TIME.strftime("%Y-%m-%d %H:%M:%S UTC")
-        return locked
+        if trend == "UP" and momentum == "BULLISH":
+            confidence += 18; reasons.append("Trend+Momentum aligned (UP)")
+        if trend == "DOWN" and momentum == "BEARISH":
+            confidence += 18; reasons.append("Trend+Momentum aligned (DOWN)")
+        if vol == "HIGH":
+            confidence += 8; reasons.append("Strong candle")
+        if vol == "LOW":
+            confidence -= 10; reasons.append("Low volatility")
+        if r is not None and (r > 70 or r < 30):
+            confidence -= 6; reasons.append("Overbought/Oversold risk")
 
-    # ---- Generate New Signal ----
-    data = generate_signal_logic()
-    data["locked"] = False
-    data["time"] = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        confidence = max(0, min(95, confidence))
 
-    LAST_SIGNAL_TIME = now
-    LAST_SIGNAL_DATA = data
-
-    return data
+        if confidence >= 70:
+            if trend ==
