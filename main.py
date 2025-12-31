@@ -4,30 +4,32 @@ import random
 
 app = FastAPI(
     title="Trading AI Backend",
-    description="Locked Pair EUR/USD | 1M Candle | 40s Expiry | Refresh-Based Signal",
-    version="2.0"
+    description="OTC Market | EUR/USD OTC | 1M Candle | 40s Expiry | Pair Locked",
+    version="3.0"
 )
 
-# ===== FIXED SETTINGS =====
-PAIR = "EUR/USD"
+# ===== FIXED MARKET SETTINGS =====
+PAIR = "EUR/USD (OTC)"
+MARKET = "OTC"
 TIMEFRAME = "1 Minute"
 EXPIRY_SECONDS = 40
 CONFIDENCE_THRESHOLD = 70
 
-# ===== MARKET LOGIC (FAST & STABLE) =====
+# ===== STABLE OTC LOGIC =====
 def analyze_market():
     """
-    Har refresh par naya decision.
-    1-minute candle ke liye tuned.
+    OTC tuned logic:
+    - Fewer false signals
+    - Clear BUY / SELL zones
     """
     r = random.random()
 
-    if r >= 0.62:
+    if r >= 0.65:
         signal = "BUY"
-        confidence = random.randint(72, 85)
-    elif r <= 0.38:
+        confidence = random.randint(72, 86)
+    elif r <= 0.35:
         signal = "SELL"
-        confidence = random.randint(72, 85)
+        confidence = random.randint(72, 86)
     else:
         signal = "NO TRADE"
         confidence = random.randint(55, 69)
@@ -39,13 +41,14 @@ def get_signal():
     signal, confidence = analyze_market()
 
     return {
+        "market": MARKET,
         "pair": PAIR,
         "timeframe": TIMEFRAME,
         "signal": signal,
         "confidence": f"{confidence}%",
         "expiry": f"{EXPIRY_SECONDS} sec",
-        "rule": "Trade only if confidence >= 70%",
-        "entry_rule": "Enter within first 0–5 sec of new candle",
+        "entry_rule": "Enter within first 0–5 sec of candle",
+        "trade_rule": "Trade only if confidence >= 70%",
         "refresh": "UNLOCKED (every refresh = new decision)",
         "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     }
@@ -54,6 +57,7 @@ def get_signal():
 def root():
     return {
         "status": "Trading AI Backend Running",
+        "market": MARKET,
         "pair_locked": PAIR,
         "use": "/signal"
     }
