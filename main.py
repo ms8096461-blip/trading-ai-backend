@@ -1,63 +1,70 @@
 from fastapi import FastAPI
-from datetime import datetime
 import random
+import time
+from datetime import datetime
 
-app = FastAPI(
-    title="Trading AI Backend",
-    description="OTC Market | EUR/USD OTC | 1M Candle | 40s Expiry | Pair Locked",
-    version="3.0"
-)
+app = FastAPI()
 
-# ===== FIXED MARKET SETTINGS =====
-PAIR = "EUR/USD (OTC)"
-MARKET = "OTC"
-TIMEFRAME = "1 Minute"
+PAIR = "USD/BRL (OTC)"
 EXPIRY_SECONDS = 40
 CONFIDENCE_THRESHOLD = 70
 
-# ===== STABLE OTC LOGIC =====
+last_candle_minute = None
+current_signal = {
+    "pair": PAIR,
+    "signal": "NO TRADE",
+    "confidence": 0,
+    "expiry": EXPIRY_SECONDS,
+    "reason": "Waiting for new candle"
+}
+
 def analyze_market():
     """
-    OTC tuned logic:
-    - Fewer false signals
-    - Clear BUY / SELL zones
+    Fake candle logic (demo AI)
+    Replace later with real indicators if needed
     """
-    r = random.random()
+    direction = random.choice(["BUY", "SELL", "NO TRADE"])
+    confidence = random.randint(55, 90)
 
-    if r >= 0.65:
-        signal = "BUY"
-        confidence = random.randint(72, 86)
-    elif r <= 0.35:
-        signal = "SELL"
-        confidence = random.randint(72, 86)
+    if confidence < CONFIDENCE_THRESHOLD:
+        return "NO TRADE", confidence, "Low confidence"
+
+    if direction == "BUY":
+        return "BUY", confidence, "Bullish candle pressure"
+    elif direction == "SELL":
+        return "SELL", confidence, "Bearish candle pressure"
     else:
-        signal = "NO TRADE"
-        confidence = random.randint(55, 69)
-
-    return signal, confidence
+        return "NO TRADE", confidence, "Market unclear"
 
 @app.get("/signal")
 def get_signal():
-    signal, confidence = analyze_market()
+    global last_candle_minute, current_signal
 
-    return {
-        "market": MARKET,
-        "pair": PAIR,
-        "timeframe": TIMEFRAME,
-        "signal": signal,
-        "confidence": f"{confidence}%",
-        "expiry": f"{EXPIRY_SECONDS} sec",
-        "entry_rule": "Enter within first 0–5 sec of candle",
-        "trade_rule": "Trade only if confidence >= 70%",
-        "refresh": "UNLOCKED (every refresh = new decision)",
-        "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    }
+    now = datetime.utcnow()
+    current_minute = now.minute
+
+    # Detect new candle
+    if last_candle_minute != current_minute:
+        last_candle_minute = current_minute
+
+        signal, confidence, reason = analyze_market()
+
+        current_signal = {
+            "pair": PAIR,
+            "signal": signal,
+            "confidence": confidence,
+            "expiry": EXPIRY_SECONDS,
+            "reason": reason,
+            "candle_time": now.strftime("%H:%M:%S")
+        }
+
+    return current_signal
 
 @app.get("/")
 def root():
     return {
-        "status": "Trading AI Backend Running",
-        "market": MARKET,
-        "pair_locked": PAIR,
-        "use": "/signal"
+        "status": "Trading AI Running",
+        "pair": PAIR,
+        "expiry": f"{EXPIRY_SECONDS} sec",
+        "rule": "Trade only in first 5 sec of new candle"
     }
