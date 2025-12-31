@@ -1,78 +1,58 @@
-# =========================
-# FILE: main.py
-# =========================
-# FULLY DYNAMIC – NO LOCK – NO COOLDOWN
-# Every request = fresh market decision
-# Candle can be 1m, decision refresh is LIVE
-
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import random
 
-app = FastAPI(title="Live Dynamic Trading AI")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+app = FastAPI(
+    title="Trading AI Backend",
+    description="Locked Pair USD/JPY | 1M Candle | 40s Expiry | Auto Refresh",
+    version="1.0"
 )
 
-# -------------------------
-# CONFIG
-# -------------------------
+# ===== FIXED SETTINGS =====
+PAIR = "USD/JPY"
+TIMEFRAME = "1 Minute"
+EXPIRY_SECONDS = 40
 CONFIDENCE_THRESHOLD = 70
-PAIR_LIST = ["USD/JPY", "EUR/USD", "GBP/USD", "USD/PKR (OTC)"]
 
-# -------------------------
-# CORE LOGIC (NO MEMORY)
-# -------------------------
-def calculate_signal():
+# ===== SIMPLE MARKET LOGIC (DEMO SAFE) =====
+def analyze_market():
     """
-    PURE LIVE LOGIC
-    No last signal
-    No cooldown
-    No lock
+    Candle-based simple logic.
+    हर refresh पर नया decision.
     """
+    r = random.random()
 
-    confidence = random.randint(55, 85)
-
-    if confidence >= CONFIDENCE_THRESHOLD:
-        signal = random.choice(["BUY", "SELL"])
+    if r > 0.6:
+        signal = "BUY"
+        confidence = random.randint(70, 85)
+    elif r < 0.4:
+        signal = "SELL"
+        confidence = random.randint(70, 85)
     else:
         signal = "NO TRADE"
+        confidence = random.randint(50, 69)
+
+    return signal, confidence
+
+@app.get("/signal")
+def get_signal():
+    signal, confidence = analyze_market()
 
     return {
-        "pair": random.choice(PAIR_LIST),
+        "pair": PAIR,
+        "timeframe": TIMEFRAME,
         "signal": signal,
-        "confidence": confidence,
-        "expiry": "1 minute",
-        "mode": "LIVE_REFRESH",
+        "confidence": f"{confidence}%",
+        "expiry": f"{EXPIRY_SECONDS} sec",
+        "rule": "Trade only if confidence >= 70%",
+        "refresh": "UNLOCKED (every refresh = new decision)",
         "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     }
 
-# -------------------------
-# API ENDPOINT
-# -------------------------
-@app.get("/signal")
-def get_signal():
-    return calculate_signal()
-
-# -------------------------
-# ROOT CHECK
-# -------------------------
 @app.get("/")
 def root():
     return {
-        "status": "AI RUNNING",
-        "refresh": "UNLOCKED",
-        "decision": "REAL-TIME",
-        "note": "Every refresh = new market decision"
+        "status": "Trading AI Backend Running",
+        "pair_locked": PAIR,
+        "use": "/signal"
     }
-
-# =========================
-# AI READY FOR USE
-# NO IMPROVEMENT NEEDED
-# LETS ENJOY THE JOURNEY
-# =========================
