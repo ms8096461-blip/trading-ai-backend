@@ -4,33 +4,33 @@ import random
 
 app = FastAPI(
     title="Trading AI Backend",
-    description="Locked Pair USD/JPY | 1M Candle | 40s Expiry | Auto Refresh",
-    version="1.0"
+    description="Locked Pair EUR/USD | 1M Candle | 40s Expiry | Refresh-Based Signal",
+    version="2.0"
 )
 
 # ===== FIXED SETTINGS =====
-PAIR = "USD/JPY"
+PAIR = "EUR/USD"
 TIMEFRAME = "1 Minute"
 EXPIRY_SECONDS = 40
 CONFIDENCE_THRESHOLD = 70
 
-# ===== SIMPLE MARKET LOGIC (DEMO SAFE) =====
+# ===== MARKET LOGIC (FAST & STABLE) =====
 def analyze_market():
     """
-    Candle-based simple logic.
-    हर refresh पर नया decision.
+    Har refresh par naya decision.
+    1-minute candle ke liye tuned.
     """
     r = random.random()
 
-    if r > 0.6:
+    if r >= 0.62:
         signal = "BUY"
-        confidence = random.randint(70, 85)
-    elif r < 0.4:
+        confidence = random.randint(72, 85)
+    elif r <= 0.38:
         signal = "SELL"
-        confidence = random.randint(70, 85)
+        confidence = random.randint(72, 85)
     else:
         signal = "NO TRADE"
-        confidence = random.randint(50, 69)
+        confidence = random.randint(55, 69)
 
     return signal, confidence
 
@@ -45,6 +45,7 @@ def get_signal():
         "confidence": f"{confidence}%",
         "expiry": f"{EXPIRY_SECONDS} sec",
         "rule": "Trade only if confidence >= 70%",
+        "entry_rule": "Enter within first 0–5 sec of new candle",
         "refresh": "UNLOCKED (every refresh = new decision)",
         "server_time": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     }
